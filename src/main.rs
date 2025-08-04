@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
-use std::io::{stdout, BufWriter, Write};
+use dmdr_core::model::{MetaData, MyModel};
+use std::io::{BufWriter, Write, stdout};
 use std::sync::Arc;
 use std::{fs::File, path::PathBuf};
 
@@ -27,6 +28,12 @@ enum Commands {
         #[clap(short, long)]
         model: Option<String>,
     },
+    Get {
+        #[clap(short, long)]
+        model: String,
+        #[clap(long)]
+        show_meta: bool,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,6 +50,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Write { model } => {
             write_dot(&data, &indexes, model, Some("data.dot".into()))?;
+        }
+        Commands::Get { model, show_meta } => {
+            let specified_uuid = indexes.has_model(model.as_str());
+            let specified_name = indexes.has_model_name(model.as_str());
+
+            let model = if specified_name {
+                indexes.get_model_by_name(model.as_str())
+            } else if specified_uuid {
+                indexes.get_model(model.as_str())
+            } else {
+                panic!("no match {} in models", model);
+            };
+
+            show_model(&model, show_meta);
         }
     }
 
@@ -146,6 +167,37 @@ fn enumerate(data: &Structure, indexes: &UuidIndexes, show_uuid: bool) -> Vec<St
     }
 
     lines
+}
+
+fn show_model(model: &MyModel, show_meta: bool) {
+    let mut lines = vec![];
+
+    lines.push(format!("model name: {}", model.model_name));
+    lines.push(format!("object name: {}", model.object_name));
+    lines.push(format!("app label: {}", model.app_label));
+    lines.push(format!("db table: {}", model.db_table));
+    lines.push(format!("fields: {}", model.fields.len()));
+    lines.push("".to_owned());
+
+    let mut out = BufWriter::new(stdout().lock());
+
+    write(&mut out, lines.join("\n").as_bytes());
+    if show_meta {
+        show_meta_data(&model._meta_data);
+    }
+}
+
+fn show_meta_data(meta_data: &MetaData) {
+    let mut lines = vec![];
+
+    lines.push(format!("uuid: {}", meta_data.uuid));
+    lines.push(format!("source file: {}", meta_data.code.source_file));
+    lines.push(format!("source line: {}", meta_data.code.line_number));
+    lines.push("".to_owned());
+
+    let mut out = BufWriter::new(stdout().lock());
+
+    write(&mut out, lines.join("\n").as_bytes());
 }
 
 fn rebuild(
