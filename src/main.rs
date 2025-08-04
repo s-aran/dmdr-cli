@@ -103,18 +103,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Commands::Get { model, show_meta } => {
-            let specified_uuid = indexes.has_model(model.as_str());
-            let specified_name = indexes.has_model_name(model.as_str());
-
-            let model = if specified_name {
-                indexes.get_model_by_name(model.as_str())
-            } else if specified_uuid {
-                indexes.get_model(model.as_str())
+            if let Some(model) = get_model_by(&indexes, model.as_str()) {
+                show_model(&model, show_meta);
             } else {
                 panic!("no match {} in models", model);
-            };
-
-            show_model(&model, show_meta);
+            }
         }
     }
 
