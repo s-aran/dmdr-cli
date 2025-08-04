@@ -23,6 +23,8 @@ enum Commands {
     Enumerate {
         #[clap(short, long)]
         uuid: bool,
+        #[clap(short, long)]
+        model: Option<String>,
     },
     Write {
         #[clap(short, long)]
@@ -42,7 +44,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (data, indexes) = load_json(args.file.into())?;
 
     match args.command {
-        Commands::Enumerate { uuid } => {
+        Commands::Enumerate { uuid, model } => {
+            let (data, indexes) = if let Some(model) = model {
+                if let Some(model) = get_model_by(&indexes, model.as_str()) {
+                    let uuid = model._meta_data.uuid.clone();
+                    rebuild(data, indexes, uuid)
+                } else {
+                    panic!("no match {} in models", model);
+                }
+            } else {
+                (data, indexes)
+            };
+
             let lines = enumerate(&data, &indexes, uuid);
             let mut out = BufWriter::new(stdout().lock());
             write(&mut out, lines.join("\n").as_bytes());
@@ -52,18 +65,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             write_dot(&data, &indexes, model, Some("data.dot".into()))?;
         }
         Commands::Get { model, show_meta } => {
-            let specified_uuid = indexes.has_model(model.as_str());
-            let specified_name = indexes.has_model_name(model.as_str());
-
-            let model = if specified_name {
-                indexes.get_model_by_name(model.as_str())
-            } else if specified_uuid {
-                indexes.get_model(model.as_str())
+            if let Some(model) = get_model_by(&indexes, model.as_str()) {
+                show_model(&model, show_meta);
             } else {
                 panic!("no match {} in models", model);
-            };
-
-            show_model(&model, show_meta);
+            }
         }
     }
 
@@ -71,6 +77,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // and ...
     // > dot -Kdot -Gdpi=300 -Tpng data.dot -odata.png
+}
+
+fn get_model_by(indexes: &UuidIndexes, model_name_or_uuid: &str) -> Option<Arc<MyModel>> {
+    let specified_uuid = indexes.has_model(model_name_or_uuid);
+    let specified_name = indexes.has_model_name(model_name_or_uuid);
+
+    if specified_name {
+        Some(indexes.get_model_by_name(model_name_or_uuid))
+    } else if specified_uuid {
+        Some(indexes.get_model(model_name_or_uuid))
+    } else {
+        None
+    }
 }
 
 fn write_dot(
@@ -201,7 +220,7 @@ fn show_meta_data(meta_data: &MetaData) {
 }
 
 fn rebuild(
-    data: Structure,
+    data: Arc<Structure>,
     indexes: UuidIndexes,
     model_uuid: String,
 ) -> (Arc<Structure>, UuidIndexes) {
