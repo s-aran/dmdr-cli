@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::io::{BufWriter, Write, stdout};
+use std::io::{stdout, BufWriter, Write};
 use std::sync::Arc;
 use std::{fs::File, path::PathBuf};
 
@@ -39,6 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let lines = enumerate(&data, &indexes, uuid);
             let mut out = BufWriter::new(stdout().lock());
             write(&mut out, lines.join("\n").as_bytes());
+            println!("");
         }
         Commands::Write { model } => {
             write_dot(&data, &indexes, model, Some("data.dot".into()))?;
