@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
-use dmdr_core::model::{MetaData, MyModel};
-use std::io::{BufWriter, Write, stdout};
+use dmdr_core::model::{MetaData, MyField, MyModel};
+use std::io::{stdout, BufWriter, Write};
 use std::sync::Arc;
 use std::{fs::File, path::PathBuf};
 
@@ -31,8 +31,9 @@ enum Commands {
         model: Option<String>,
     },
     Get {
-        #[clap(short, long)]
         model: String,
+        #[clap(long)]
+        show_fields: bool,
         #[clap(long)]
         show_meta: bool,
     },
@@ -62,11 +63,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("");
         }
         Commands::Write { model } => {
-            write_dot(&data, &indexes, model, Some("data.dot".into()))?;
+            let (data, indexes) = if let Some(model) = model {
+                if let Some(model) = get_model_by(&indexes, model.as_str()) {
+                    let uuid = model._meta_data.uuid.clone();
+                    rebuild(data, indexes, uuid)
+                } else {
+                    panic!("no match {} in models", model);
+                }
+            } else {
+                (data, indexes)
+            };
+
+            write_dot(&data, &indexes, Some("data.dot".into()))?;
         }
-        Commands::Get { model, show_meta } => {
+        Commands::Get {
+            model,
+            show_fields,
+            show_meta,
+        } => {
             if let Some(model) = get_model_by(&indexes, model.as_str()) {
-                show_model(&model, show_meta);
+                let mut lines = get_display_models(&model);
+                if show_fields {
+                    for f in model.fields.iter() {
+                        lines.extend(get_display_fields(f));
+                    }
+                }
+                if show_meta {
+                    lines.extend(get_display_meta_data(&model._meta_data));
+                }
+
+                lines.push("".to_owned());
+
+                let mut out = BufWriter::new(stdout().lock());
+                write(&mut out, lines.join("\n").as_bytes());
             } else {
                 panic!("no match {} in models", model);
             }
@@ -95,10 +124,9 @@ fn get_model_by(indexes: &UuidIndexes, model_name_or_uuid: &str) -> Option<Arc<M
 fn write_dot(
     data: &Structure,
     indexes: &UuidIndexes,
-    target_model: Option<String>,
     output_path: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let dot = dump_er_dot(data, indexes, target_model);
+    let dot = dump_er_dot(data, indexes);
 
     if let Some(path) = output_path {
         let file = File::create(path)?;
@@ -113,18 +141,12 @@ fn write_dot(
     Ok(())
 }
 
-fn dump_er_dot(data: &Structure, indexes: &UuidIndexes, target_model: Option<String>) -> String {
+fn dump_er_dot(data: &Structure, indexes: &UuidIndexes) -> String {
     let mut dot = String::from("digraph ER {\n");
 
     // define node
     for model in &data.models {
         let uuid = &model._meta_data.uuid;
-        if let Some(target) = target_model.as_ref()
-            && target != uuid
-        {
-            continue;
-        }
-
         let label = &model.object_name;
         dot.push_str(&format!("  \"{uuid}\" [label=\"{label}\"];\n"));
     }
@@ -188,7 +210,7 @@ fn enumerate(data: &Structure, indexes: &UuidIndexes, show_uuid: bool) -> Vec<St
     lines
 }
 
-fn show_model(model: &MyModel, show_meta: bool) {
+fn get_display_models(model: &MyModel) -> Vec<String> {
     let mut lines = vec![];
 
     lines.push(format!("model name: {}", model.model_name));
@@ -196,17 +218,19 @@ fn show_model(model: &MyModel, show_meta: bool) {
     lines.push(format!("app label: {}", model.app_label));
     lines.push(format!("db table: {}", model.db_table));
     lines.push(format!("fields: {}", model.fields.len()));
-    lines.push("".to_owned());
 
-    let mut out = BufWriter::new(stdout().lock());
-
-    write(&mut out, lines.join("\n").as_bytes());
-    if show_meta {
-        show_meta_data(&model._meta_data);
-    }
+    lines
 }
 
-fn show_meta_data(meta_data: &MetaData) {
+fn get_display_fields(field: &MyField) -> Vec<String> {
+    let mut lines = vec![];
+
+    lines.push(format!("name: {}", field.name));
+
+    lines
+}
+
+fn get_display_meta_data(meta_data: &MetaData) -> Vec<String> {
     let mut lines = vec![];
 
     lines.push(format!("uuid: {}", meta_data.uuid));
@@ -214,9 +238,7 @@ fn show_meta_data(meta_data: &MetaData) {
     lines.push(format!("source line: {}", meta_data.code.line_number));
     lines.push("".to_owned());
 
-    let mut out = BufWriter::new(stdout().lock());
-
-    write(&mut out, lines.join("\n").as_bytes());
+    lines
 }
 
 fn rebuild(
