@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(model) = get_model_by(&indexes, model.as_str()) {
                 let mut lines = get_display_models(&model);
                 if show_fields {
-                    for f in model.fields.iter() {
+                    for f in model.local_fields.iter() {
                         lines.extend(get_display_fields(f));
                     }
                 }
@@ -184,7 +184,7 @@ fn get_display_models(model: &MyModel) -> Vec<String> {
     lines.push(format!("object name: {}", model.object_name));
     lines.push(format!("app label: {}", model.app_label));
     lines.push(format!("db table: {}", model.db_table));
-    lines.push(format!("fields: {}", model.fields.len()));
+    lines.push(format!("fields: {}", model.local_fields.len()));
 
     lines
 }
