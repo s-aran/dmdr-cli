@@ -38,6 +38,8 @@ enum Commands {
         show_fields: bool,
         #[clap(long = "meta")]
         show_meta: bool,
+        #[clap(long = "source")]
+        show_source: bool,
     },
 }
 
@@ -82,6 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             model,
             show_fields,
             show_meta,
+            show_source,
         } => {
             if let Some(model) = get_model_by(&indexes, model.as_str()) {
                 let mut lines = get_display_models(&model);
@@ -92,6 +95,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 if show_meta {
                     lines.extend(get_display_meta_data(&model._meta_data));
+                }
+                if show_source {
+                    lines.extend(vec![&mut model._meta_data.code.partial.clone().concat()]);
                 }
 
                 lines.push("".to_owned());
