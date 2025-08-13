@@ -10,6 +10,12 @@ use dmdr_core::{
     model::{Structure, UuidIndexes},
 };
 
+enum FieldType {
+    Local,
+    Related,
+    Forwarded,
+}
+
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None, subcommand_required = true, arg_required_else_help = true)]
 struct Args {
@@ -90,14 +96,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut lines = get_display_models(&model);
                 if show_fields {
                     for f in model.local_fields.iter() {
-                        lines.extend(get_display_fields(f));
+                        lines.extend(get_display_fields(f, FieldType::Local));
+                    }
+
+                    for f in model.relation_fields.iter() {
+                        lines.extend(get_display_fields(f, FieldType::Related));
+                    }
+
+                    for f in model.forward_fields.iter() {
+                        lines.extend(get_display_fields(f, FieldType::Forwarded));
                     }
                 }
+
                 if show_meta {
                     lines.extend(get_display_meta_data(&model._meta_data));
                 }
+
                 if show_source {
-                    lines.extend(vec![&mut model._meta_data.code.partial.clone().concat()]);
+                    lines.push(model._meta_data.code.partial.concat());
                 }
 
                 lines.push("".to_owned());
@@ -121,9 +137,18 @@ fn get_model_by(indexes: &UuidIndexes, model_name_or_uuid: &str) -> Option<Arc<M
     let specified_name = indexes.has_model_name(model_name_or_uuid);
 
     if specified_name {
-        Some(indexes.get_model_by_name(model_name_or_uuid))
+        let by_name = indexes.get_model_by_name(model_name_or_uuid);
+        let by_table = indexes.get_model_by_table(model_name_or_uuid);
+
+        if let Some(n) = by_name {
+            Some(n)
+        } else if let Some(t) = by_table {
+            Some(t)
+        } else {
+            panic!("not found: {}", model_name_or_uuid);
+        }
     } else if specified_uuid {
-        Some(indexes.get_model(model_name_or_uuid))
+        Some(indexes.get_model_by_uuid(model_name_or_uuid).unwrap())
     } else {
         None
     }
@@ -190,15 +215,31 @@ fn get_display_models(model: &MyModel) -> Vec<String> {
     lines.push(format!("object name: {}", model.object_name));
     lines.push(format!("app label: {}", model.app_label));
     lines.push(format!("db table: {}", model.db_table));
-    lines.push(format!("fields: {}", model.local_fields.len()));
+    lines.push(format!(
+        "fields: local={}, related={}, forwarded={}",
+        model.local_fields.len(),
+        model.relation_fields.len(),
+        model.forward_fields.len(),
+    ));
 
     lines
 }
 
-fn get_display_fields(field: &MyField) -> Vec<String> {
-    let mut lines = vec![];
+fn get_display_fields(field: &MyField, category: FieldType) -> Vec<String> {
+    let prefix = match category {
+        FieldType::Local => "Local",
+        FieldType::Related => "Related",
+        FieldType::Forwarded => "Forwarded",
+    };
 
-    lines.push(format!("name: {}", field.name));
+    let name = field.name.clone();
+    let text = match category {
+        FieldType::Local => format!("{name}"),
+        FieldType::Related => format!("{name} (-> {:?})", field.related_model),
+        FieldType::Forwarded => format!("{name} (-> {:?})", field.related_model),
+    };
+
+    let lines = vec![format!("[{:9}] {}", prefix, text)];
 
     lines
 }
