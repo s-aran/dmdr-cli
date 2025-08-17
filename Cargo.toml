@@ -1,5 +1,5 @@
 [package]
-name = "dmdr-cli"
+name = "dmdr"
 version = "0.1.0"
 edition = "2024"
 
