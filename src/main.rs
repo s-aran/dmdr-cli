@@ -40,6 +40,8 @@ enum Commands {
     Get {
         #[clap(value_name = "MODEL")]
         model: String,
+        #[clap(value_name = "FIELD")]
+        field: Option<String>,
         #[clap(long = "fields")]
         show_fields: bool,
         #[clap(long = "meta")]
@@ -88,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Get {
             model,
+            field,
             show_fields,
             show_meta,
             show_source,
@@ -96,15 +99,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut lines = get_display_models(&model);
                 if show_fields {
                     for f in model.local_fields.iter() {
-                        lines.extend(get_display_fields(f, FieldType::Local));
+                        lines.extend(get_display_fields(&indexes, f, FieldType::Local));
                     }
 
                     for f in model.relation_fields.iter() {
-                        lines.extend(get_display_fields(f, FieldType::Related));
+                        lines.extend(get_display_fields(&indexes, f, FieldType::Related));
                     }
 
                     for f in model.forward_fields.iter() {
-                        lines.extend(get_display_fields(f, FieldType::Forwarded));
+                        lines.extend(get_display_fields(&indexes, f, FieldType::Forwarded));
                     }
                 }
 
@@ -225,18 +228,22 @@ fn get_display_models(model: &MyModel) -> Vec<String> {
     lines
 }
 
-fn get_display_fields(field: &MyField, category: FieldType) -> Vec<String> {
+fn get_display_fields(indexes: &UuidIndexes, field: &MyField, category: FieldType) -> Vec<String> {
     let prefix = match category {
         FieldType::Local => "Local",
         FieldType::Related => "Related",
         FieldType::Forwarded => "Forwarded",
     };
 
-    let name = field.name.clone();
+    let name = &field.name;
     let text = match category {
         FieldType::Local => format!("{name}"),
-        FieldType::Related => format!("{name} (-> {:?})", field.related_model),
-        FieldType::Forwarded => format!("{name} (-> {:?})", field.related_model),
+        FieldType::Related => format!("{name}"),
+        FieldType::Forwarded => {
+            let uuid = &field.related_model.clone().unwrap().uuid;
+            let model = indexes.get_model_by_uuid(uuid).unwrap();
+            format!("{name} -> {} ({})", model.object_name, model.db_table)
+        }
     };
 
     let lines = vec![format!("[{:9}] {}", prefix, text)];
