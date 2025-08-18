@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use ahash::AHashSet;
 use clap::{Parser, Subcommand};
 use dmdr_core::model::{MetaData, MyField, MyModel, RelationType};
