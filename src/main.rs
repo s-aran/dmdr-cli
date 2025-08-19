@@ -257,8 +257,10 @@ fn get_display_meta_data(meta_data: &MetaData) -> Vec<String> {
     let mut lines = vec![];
 
     lines.push(format!("uuid: {}", meta_data.uuid));
-    lines.push(format!("source file: {}", meta_data.code.source_file));
-    lines.push(format!("source line: {}", meta_data.code.line_number));
+    lines.push(format!(
+        "source file: {}:{}",
+        meta_data.code.source_file, meta_data.code.line_number
+    ));
     lines.push("".to_owned());
 
     lines
