@@ -1,5 +1,6 @@
+use ahash::AHashSet;
 use clap::{Parser, Subcommand};
-use dmdr_core::model::{MetaData, MyField, MyModel};
+use dmdr_core::model::{MetaData, MyField, MyModel, RelationType};
 use std::io::{BufWriter, Write, stdout};
 use std::sync::Arc;
 use std::{fs::File, path::PathBuf};
@@ -156,41 +157,6 @@ fn write_dot(
     Ok(())
 }
 
-fn dump_er_dot(data: &Structure, indexes: &UuidIndexes) -> String {
-    let mut dot = String::from("digraph ER {\n");
-
-    // define node
-    for model in &data.models {
-        let uuid = &model._meta_data.uuid;
-        let label = &model.object_name;
-        dot.push_str(&format!("  \"{uuid}\" [label=\"{label}\"];\n"));
-    }
-
-    // define edge
-    for rel in &data.relations {
-        let src_model_uuid = indexes.get_model_from_field(&rel.src_field);
-        let dst_model_uuid = &rel.target_model;
-
-        // if let Some(target) = target_model.as_ref()
-        //     && (target != src_model_uuid || target != dst_model_uuid)
-        // {
-        //     continue;
-        // }
-
-        let rel_label = format!("{:?}", rel.relation_type);
-
-        dot.push_str(&format!(
-            "  \"{src}\" -> \"{dst}\" [label=\"{lbl}\"];\n",
-            src = src_model_uuid,
-            dst = dst_model_uuid,
-            lbl = rel_label
-        ));
-    }
-
-    dot.push_str("}\n");
-    dot
-}
-
 fn write<T>(to: &mut BufWriter<T>, data: &[u8])
 where
     T: Sized + Write,
@@ -261,28 +227,227 @@ fn rebuild(
     indexes: UuidIndexes,
     model_uuid: String,
 ) -> (Arc<Structure>, UuidIndexes) {
-    let model = indexes.get_model(&model_uuid);
+    // 1ホップの近傍をすべて含める
+    let mut keep_models: AHashSet<String> = AHashSet::new();
+    keep_models.insert(model_uuid.clone());
 
-    let new_models = vec![model.clone()];
-
-    // TODO: M2M
-    let new_relations = data
+    // 指定モデルに関連する全リレーション（src/target/through いずれか一致）
+    let new_relations: Vec<_> = data
         .relations
         .iter()
-        .filter(|rel| rel.target_model == model_uuid)
-        .map(|rel| rel.clone())
-        .collect::<Vec<_>>();
+        .filter(|rel| {
+            rel.src_model_uuid == model_uuid
+                || rel.target_model_uuid == model_uuid
+                || rel.through_model_uuid.as_deref() == Some(model_uuid.as_str())
+        })
+        .cloned()
+        .collect();
+
+    // 関与する全モデルUUIDを収集（src/target/through）
+    for rel in &new_relations {
+        keep_models.insert(rel.src_model_uuid.clone());
+        keep_models.insert(rel.target_model_uuid.clone());
+        if let Some(t) = &rel.through_model_uuid {
+            keep_models.insert(t.clone());
+        }
+    }
+
+    // 上で集めたモデルのみ残す
+    let new_models: Vec<_> = data
+        .models
+        .iter()
+        .filter(|m| keep_models.contains(&m._meta_data.uuid))
+        .cloned()
+        .collect();
 
     let new_data = Structure {
-        models: new_models
-            .iter()
-            .map(|arc_model| Arc::clone(arc_model).as_ref().clone())
-            .collect(),
+        models: new_models,
         relations: new_relations,
     };
 
     let shared = Arc::new(new_data);
-    let new_indexes = UuidIndexes::new(&shared.clone());
-
+    let new_indexes = UuidIndexes::new(&shared);
     (shared, new_indexes)
+}
+
+fn dump_er_dot(data: &Structure, indexes: &UuidIndexes) -> String {
+    use std::collections::BTreeMap;
+    use std::fmt::Write;
+
+    fn default_jp_font() -> &'static str {
+        #[cfg(target_os = "windows")]
+        {
+            "Yu Gothic,Meiryo,Noto Sans CJK JP,Segoe Emoji"
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            "Hiragino Sans,Noto Sans CJK JP,Apple Color Emoji"
+        }
+
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            "Noto Sans CJK JP,Noto Sans,DejaVu Sans"
+        }
+    }
+
+    fn escape(s: &str) -> String {
+        let mut out = String::with_capacity(s.len() + 8);
+        for ch in s.chars() {
+            match ch {
+                '\\' => out.push_str("\\\\"),
+                '"' => out.push_str("\\\""),
+                '\n' => out.push_str("\\n"),
+                '\r' => {}
+                _ => out.push(ch),
+            }
+        }
+        out
+    }
+
+    // 少し見やすくするため local_fields を数行だけ表示
+    fn format_field_lines(model: &MyModel, max_fields: usize) -> String {
+        let mut lines = Vec::new();
+        for f in model.local_fields.iter().take(max_fields) {
+            let mut flags = Vec::new();
+            if !f.null {
+                flags.push("NOT NULL");
+            }
+            if !f.verbose_name.is_empty() {
+                flags.push(f.verbose_name.as_str());
+            }
+            let flag = if flags.is_empty() {
+                "".to_string()
+            } else {
+                format!(" ({})", flags.join(", "))
+            };
+            lines.push(format!("• {}{}", f.name, flag));
+        }
+        if model.local_fields.len() > max_fields {
+            lines.push(format!(
+                "… and {} more",
+                model.local_fields.len() - max_fields
+            ));
+        }
+        lines.join("\\n")
+    }
+
+    fn card(rt: &RelationType) -> (&'static str, &'static str) {
+        match rt {
+            RelationType::ForeignKey => ("N", "1"),
+            RelationType::OneToOne => ("1", "1"),
+            RelationType::ManyToMany => ("N", "N"),
+        }
+    }
+
+    let font = default_jp_font();
+
+    let mut out = String::new();
+    writeln!(
+        out,
+        "digraph ER {{\n\
+         graph [rankdir=LR, charset=\"UTF-8\", fontname=\"{font}\", fontsize=12];\n\
+         node  [shape=record,       fontname=\"{font}\", fontsize=11];\n\
+         edge  [                    fontname=\"{font}\", fontsize=10, arrowsize=0.8, labeldistance=1.2, labelfontsize=9];",
+    ).unwrap();
+
+    // app_label ごとにクラスタ化（順序安定）
+    let mut apps: BTreeMap<&str, Vec<&MyModel>> = BTreeMap::new();
+    for m in &data.models {
+        apps.entry(m.app_label.as_str()).or_default().push(m);
+    }
+
+    // ノード
+    for (i, (app, models)) in apps.iter().enumerate() {
+        writeln!(
+            out,
+            "  subgraph cluster_{} {{\n    label = \"{}\";\n    style=rounded;\n    color=\"#aaaaaa\";",
+            i, escape(app)
+        ).unwrap();
+        for m in models {
+            let node_id = escape(&m._meta_data.uuid);
+            let title = format!("{}|<name>{}", escape(&m.object_name), escape(&m.model_name));
+            let fields = format_field_lines(m, 8);
+            let fields = if fields.is_empty() {
+                "".to_string()
+            } else {
+                format!("|{}", fields)
+            };
+            writeln!(
+                out,
+                "    \"{}\" [label=\"{{{}}}{}\"];",
+                node_id, title, fields
+            )
+            .unwrap();
+        }
+        writeln!(out, "  }}").unwrap();
+    }
+    writeln!(out).unwrap();
+
+    // エッジ
+    for rel in &data.relations {
+        // ここが重要：**必ず UUID を使う**（名前やフィールド名では引けないことがある）
+        let src_uuid = &rel.src_model_uuid;
+        let dst_uuid = &rel.target_model_uuid;
+
+        // 表示用に名前解決（無ければUUID）
+        let src_name = indexes
+            .get_model_by_uuid(src_uuid)
+            .map(|m| m.object_name.clone())
+            .unwrap_or_else(|| src_uuid.clone());
+        let dst_name = indexes
+            .get_model_by_uuid(dst_uuid)
+            .map(|m| m.object_name.clone())
+            .unwrap_or_else(|| dst_uuid.clone());
+
+        match rel.relation_type {
+            RelationType::ManyToMany => {
+                if let Some(thr_uuid) = &rel.through_model_uuid {
+                    // through 指定時は破線で 2 本に分けて描画
+                    writeln!(
+                        out,
+                        "  \"{}\" -> \"{}\" [style=dashed, taillabel=\"N\", headlabel=\"N\", tooltip=\"{} <-> {} via {}\"];\n  \"{}\" -> \"{}\" [style=dashed, taillabel=\"N\", headlabel=\"N\", tooltip=\"{} <-> {} via {}\"];",
+                        escape(src_uuid),
+                        escape(thr_uuid),
+                        escape(&src_name), escape(&dst_name), escape(rel.through_model.as_deref().unwrap_or("")),
+                        escape(thr_uuid),
+                        escape(dst_uuid),
+                        escape(&src_name), escape(&dst_name), escape(rel.through_model.as_deref().unwrap_or("")),
+                    ).unwrap();
+                } else {
+                    writeln!(
+                        out,
+                        "  \"{}\" -> \"{}\" [taillabel=\"N\", headlabel=\"N\", tooltip=\"{} <-> {} (ManyToMany)\"];",
+                        escape(src_uuid), escape(dst_uuid), escape(&src_name), escape(&dst_name)
+                    ).unwrap();
+                }
+            }
+            _ => {
+                let (tail, head) = card(&rel.relation_type);
+                let mut attrs = format!(
+                    "taillabel=\"{}\", headlabel=\"{}\", tooltip=\"{}.{} -> {} ({:?})\"",
+                    tail,
+                    head,
+                    escape(&src_name),
+                    escape(&rel.src_field),
+                    escape(&dst_name),
+                    rel.relation_type
+                );
+                if matches!(rel.relation_type, RelationType::OneToOne) {
+                    attrs.push_str(", dir=both, arrowhead=normal, arrowtail=normal");
+                }
+                writeln!(
+                    out,
+                    "  \"{}\" -> \"{}\" [{}];",
+                    escape(src_uuid),
+                    escape(dst_uuid),
+                    attrs
+                )
+                .unwrap();
+            }
+        }
+    }
+
+    writeln!(out, "}}").unwrap();
+    out
 }
