@@ -347,7 +347,6 @@ fn dump_er_dot(data: &Structure, indexes: &UuidIndexes) -> String {
         out
     }
 
-    // 少し見やすくするため local_fields を数行だけ表示
     fn format_field_lines(model: &MyModel, max_fields: usize) -> String {
         let mut lines = Vec::new();
         for f in model.local_fields.iter().take(max_fields) {
@@ -358,6 +357,7 @@ fn dump_er_dot(data: &Structure, indexes: &UuidIndexes) -> String {
             if !f.verbose_name.is_empty() {
                 flags.push(f.verbose_name.as_str());
             }
+
             let flag = if flags.is_empty() {
                 "".to_string()
             } else {
