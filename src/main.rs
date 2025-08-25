@@ -1,9 +1,7 @@
-use std::fmt::Write as _;
-
 use ahash::AHashSet;
 use clap::{Parser, Subcommand};
 use dmdr_core::model::{MetaData, MyField, MyModel, RelationType};
-use std::io::{BufWriter, Write, stdout};
+use std::io::{stdout, BufWriter, Write};
 use std::sync::Arc;
 use std::{fs::File, path::PathBuf};
 
