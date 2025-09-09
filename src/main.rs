@@ -89,7 +89,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             show_fields,
             show_meta,
             show_source,
-        } => {}
+        } => {
+            let instance = CommandGet::new(model, show_fields, show_meta, show_source);
+            instance.command(&data, &indexes);
+        }
         Commands::Interactive => {
             let mut out = BufWriter::new(stdout().lock());
             write(&mut out, "> ".as_bytes());
@@ -557,6 +560,17 @@ struct CommandGet {
     show_fields: bool,
     show_meta: bool,
     show_source: bool,
+}
+
+impl CommandGet {
+    pub fn new(model: String, show_fields: bool, show_meta: bool, show_source: bool) -> Self {
+        Self {
+            model,
+            show_fields,
+            show_meta,
+            show_source,
+        }
+    }
 }
 
 impl Command for CommandGet {
