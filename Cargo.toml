@@ -9,6 +9,7 @@ clap = { version = "4.5.42", features = ["derive"] }
 clap_derive = "4.5.41"
 graphviz-rust = "0.9.5"
 ahash = { version = "0.8.12", features = ["serde"] }
+dialoguer = { version = "0.12.0", features = ["completion", "fuzzy-matcher", "fuzzy-select", "history"] }
 
 [profile.release]
 opt-level = 3

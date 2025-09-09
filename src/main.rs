@@ -49,6 +49,7 @@ enum Commands {
         #[clap(long = "source")]
         show_source: bool,
     },
+    Interactive,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -125,6 +126,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 write(&mut out, lines.join("\n").as_bytes());
             } else {
                 panic!("no match {} in models", model);
+            }
+        }
+        Commands::Interactive => {
+            let mut out = BufWriter::new(stdout().lock());
+            write(&mut out, "> ".as_bytes());
+
+            while interactive(&data, &indexes) {
+                write(&mut out, "> ".as_bytes());
             }
         }
     }
@@ -492,4 +501,43 @@ fn dump_er_dot(data: &Structure, indexes: &UuidIndexes) -> String {
 
     writeln!(out, "}}").unwrap();
     out
+}
+
+fn interactive(data: &Structure, indexes: &UuidIndexes) -> bool {
+    let mut read_str = String::new();
+    let read = std::io::stdin();
+    // if read.is_terminal() {
+    //     return true;
+    // }
+
+    read.read_line(&mut read_str).ok();
+    let mut cmd_args_iter = read_str
+        .trim()
+        .split_whitespace()
+        .map(|e| e.trim().to_string())
+        .filter(|s| s.len() > 0);
+
+    // println!("{}", cmd_args_iter.clone().collect::<String>().len());
+
+    let cmd = if let Some(c) = cmd_args_iter.next() {
+        c
+    } else {
+        println!("\r> ");
+        return true;
+    };
+
+    let args: Vec<String> = cmd_args_iter.collect();
+    match cmd.to_lowercase().as_str() {
+        "get" => {
+            //
+            return true;
+        }
+        "exit" | "quit" => false,
+        _ => {
+            println!("");
+            let msg = format!("unexpected command: {}", cmd);
+            println!("{}", msg);
+            return true;
+        }
+    }
 }
