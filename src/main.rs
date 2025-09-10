@@ -5,7 +5,7 @@ use ahash::AHashSet;
 use clap::{Parser, Subcommand};
 use dialoguer::Input;
 use dmdr_core::model::{MetaData, MyField, MyModel, RelationType};
-use std::io::{BufWriter, Write, stdout};
+use std::io::{stdout, BufWriter, Write};
 use std::sync::Arc;
 
 use dmdr_core::{
@@ -181,7 +181,13 @@ pub fn get_display_fields(
         }
     };
 
-    let lines = vec![format!("[{:9}] {}", prefix, text)];
+    let verbose_name = if !&field.verbose_name.is_empty() {
+        format!(": {}", &field.verbose_name)
+    } else {
+        "".to_owned()
+    };
+
+    let lines = vec![format!("[{:9}] {}{}", prefix, text, verbose_name)];
 
     lines
 }
