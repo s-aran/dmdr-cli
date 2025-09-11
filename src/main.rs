@@ -167,7 +167,7 @@ pub fn get_display_fields(
     let prefix = match category {
         FieldType::Local => "Local",
         FieldType::Related => "Related",
-        FieldType::Forwarded => "Forwarded",
+        FieldType::Forwarded => "",
     };
 
     let name = &field.name;

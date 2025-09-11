@@ -1,9 +1,9 @@
 use std::{
-    io::{BufWriter, stdout},
+    io::{stdout, BufWriter},
     sync::Arc,
 };
 
-use crate::{FieldType, get_display_fields, get_display_meta_data, get_display_models, write};
+use crate::{get_display_fields, get_display_meta_data, get_display_models, write, FieldType};
 use dmdr_core::model::{Structure, UuidIndexes};
 
 use crate::{get_model_by, rebuild};
@@ -91,16 +91,27 @@ impl Command for CommandGet {
         if let Some(model) = get_model_by(&indexes, self.model.as_str()) {
             let mut lines = get_display_models(&model);
             if self.show_fields {
+                let forward_uuids = model
+                    .forward_fields
+                    .iter()
+                    .map(|e| e._meta_data.uuid.to_owned())
+                    .collect::<String>();
+
                 for f in model.local_fields.iter() {
+                    if forward_uuids.contains(&f._meta_data.uuid) {
+                        lines.extend(get_display_fields(&indexes, f, FieldType::Forwarded));
+                        continue;
+                    }
+
                     lines.extend(get_display_fields(&indexes, f, FieldType::Local));
                 }
 
+                // for f in model.forward_fields.iter() {
+                //     lines.extend(get_display_fields(&indexes, f, FieldType::Forwarded));
+                // }
+
                 for f in model.relation_fields.iter() {
                     lines.extend(get_display_fields(&indexes, f, FieldType::Related));
-                }
-
-                for f in model.forward_fields.iter() {
-                    lines.extend(get_display_fields(&indexes, f, FieldType::Forwarded));
                 }
             }
 
