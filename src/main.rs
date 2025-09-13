@@ -165,9 +165,8 @@ pub fn get_display_fields(
     category: FieldType,
 ) -> Vec<String> {
     let prefix = match category {
-        FieldType::Local => "Local",
+        FieldType::Local | FieldType::Forwarded => "Local",
         FieldType::Related => "Related",
-        FieldType::Forwarded => "",
     };
 
     let name = &field.name;
